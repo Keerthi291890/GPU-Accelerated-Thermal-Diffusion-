@@ -1,0 +1,4 @@
+Implementation,Grid Size,Timesteps,Threads,Average Runtime (s),Speedup
+Serial C,1024x1024,1000,1,0.603436,1.00
+OpenMP C,1024x1024,1000,2,0.408000,1.48
+OpenMP C,1024x1024,1000,4,0.426400,1.42

@@ -1,0 +1,4 @@
+label,grid_size,tolerance,max_abs_error,rmse,differing_cells,passed
+cuda_naive_16x16,1024,0.0001,0.000000e+00,0.000000e+00,0,1
+cuda_tiled_16x16,1024,0.0001,0.000000e+00,0.000000e+00,0,1
+openmp,1024,0.0001,0.000000e+00,0.000000e+00,0,1

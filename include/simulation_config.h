@@ -2,8 +2,13 @@
 #ifndef SIMULATION_CONFIG_H
 #define SIMULATION_CONFIG_H
 
+#ifndef GRID_SIZE
 #define GRID_SIZE 1024
+#endif
+
+#ifndef TIME_STEPS
 #define TIME_STEPS 1000
+#endif
 
 #define AMBIENT_TEMP 25.0f
 #define HOT_TEMP 100.0f

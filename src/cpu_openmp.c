@@ -65,8 +65,9 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    initialize_grid(current);
-    for (size_t i = 0; i < total_cells; i++) {
+   initialize_grid(current);
+
+for (size_t i = 0; i < total_cells; i++) {
     next[i] = AMBIENT_TEMP;
 }
 

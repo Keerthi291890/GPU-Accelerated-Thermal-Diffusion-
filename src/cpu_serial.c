@@ -4,10 +4,11 @@
 
 #include "../include/simulation_config.h"
 
-#define TOTAL_CELLS (GRID_SIZE * GRID_SIZE)
+#define TOTAL_CELLS ((size_t)GRID_SIZE * GRID_SIZE)
 
-static void initialize_grid(float *grid) {
-    for (int i = 0; i < TOTAL_CELLS; i++) {
+static void initialize_grid(float *grid)
+{
+    for (size_t i = 0; i < TOTAL_CELLS; i++) {
         grid[i] = AMBIENT_TEMP;
     }
 
@@ -17,18 +18,18 @@ static void initialize_grid(float *grid) {
          i < center + HOTSPOT_RADIUS; i++) {
         for (int j = center - HOTSPOT_RADIUS;
              j < center + HOTSPOT_RADIUS; j++) {
-            grid[i * GRID_SIZE + j] = HOT_TEMP;
+            grid[(size_t)i * GRID_SIZE + j] = HOT_TEMP;
         }
     }
 }
 
-static void save_csv(const char *filename,
-                     const float *grid) {
+static int save_csv(const char *filename, const float *grid)
+{
     FILE *file = fopen(filename, "w");
 
     if (file == NULL) {
         perror(filename);
-        return;
+        return 0;
     }
 
     for (int i = 0; i < GRID_SIZE; i++) {
@@ -38,16 +39,18 @@ static void save_csv(const char *filename,
             }
 
             fprintf(file, "%.9g",
-                    grid[i * GRID_SIZE + j]);
+                    grid[(size_t)i * GRID_SIZE + j]);
         }
 
         fprintf(file, "\n");
     }
 
     fclose(file);
+    return 1;
 }
 
-static double wall_time_seconds(void) {
+static double wall_time_seconds(void)
+{
     struct timespec ts;
     timespec_get(&ts, TIME_UTC);
 
@@ -55,22 +58,18 @@ static double wall_time_seconds(void) {
          + (double)ts.tv_nsec / 1e9;
 }
 
-static void simulate(float *current, float *next) {
+static void simulate(float **current_ptr, float **next_ptr)
+{
+    float *current = *current_ptr;
+    float *next = *next_ptr;
+
     for (int step = 0; step < TIME_STEPS; step++) {
 
-        /*
-         * Reset next grid so that its boundary
-         * cells remain at the ambient temperature.
-         */
-        for (int i = 0; i < TOTAL_CELLS; i++) {
-            next[i] = AMBIENT_TEMP;
-        }
-
-        /* Update interior cells only. */
+        /* Update every interior cell; preserve boundaries. */
         for (int i = 1; i < GRID_SIZE - 1; i++) {
             for (int j = 1; j < GRID_SIZE - 1; j++) {
 
-                int idx = i * GRID_SIZE + j;
+                size_t idx = (size_t)i * GRID_SIZE + j;
 
                 float center = current[idx];
                 float up     = current[idx - GRID_SIZE];
@@ -84,29 +83,30 @@ static void simulate(float *current, float *next) {
             }
         }
 
-        /* Exchange the old and new grids. */
+        /* Swap the buffers without copying the grid. */
         float *temp = current;
         current = next;
         next = temp;
     }
 
-    /*
-     * The local pointer swap above does not change
-     * the caller's pointer. Copy the final result
-     * back into the original current buffer.
-     */
-    if (TIME_STEPS % 2 != 0) {
-        for (int i = 0; i < TOTAL_CELLS; i++) {
-            current[i] = next[i];
-        }
-    }
+    /* Make the final buffer pointers visible to the caller. */
+    *current_ptr = current;
+    *next_ptr = next;
 }
 
-int main(void) {
-    float *current =
-        malloc(TOTAL_CELLS * sizeof(float));
-    float *next =
-        malloc(TOTAL_CELLS * sizeof(float));
+int main(void)
+{
+    if (GRID_SIZE < 3 ||
+        GRID_SIZE < 2 * HOTSPOT_RADIUS ||
+        TIME_STEPS < 0 ||
+        DIFFUSION_R <= 0.0f ||
+        DIFFUSION_R > 0.25f) {
+        fprintf(stderr, "Invalid simulation parameters.\n");
+        return EXIT_FAILURE;
+    }
+
+    float *current = malloc(TOTAL_CELLS * sizeof(float));
+    float *next = malloc(TOTAL_CELLS * sizeof(float));
 
     if (current == NULL || next == NULL) {
         fprintf(stderr, "Memory allocation failed.\n");
@@ -116,43 +116,35 @@ int main(void) {
     }
 
     initialize_grid(current);
+    initialize_grid(next);
 
-    if (GRID_SIZE < 3 ||
-        DIFFUSION_R <= 0.0f ||
-        DIFFUSION_R > 0.25f) {
-        fprintf(stderr, "Invalid simulation parameters.\n");
-        free(current);
-        free(next);
-        return EXIT_FAILURE;
-    }
-
-    if (TIME_STEPS % 2 != 0) {
-        fprintf(stderr,
-                "This implementation expects an even "
-                "number of timesteps.\n");
-        free(current);
-        free(next);
-        return EXIT_FAILURE;
-    }
-
+    /* Both buffers start with ambient-temperature boundaries.
+       The hotspot is applied only to the initial current grid. */
     if (system("mkdir results\\cpu 2>nul") != 0) {
         /* Directory creation is best-effort on Windows. */
     }
 
-    save_csv("results/cpu/initial_temperature.csv",
-             current);
+    if (!save_csv("results/cpu/initial_temperature.csv", current)) {
+        free(current);
+        free(next);
+        return EXIT_FAILURE;
+    }
 
     double start = wall_time_seconds();
 
-    simulate(current, next);
+    simulate(&current, &next);
 
     double end = wall_time_seconds();
     double elapsed = end - start;
 
-    save_csv("results/cpu/final_serial.csv", current);
+    if (!save_csv("results/cpu/final_serial.csv", current)) {
+        free(current);
+        free(next);
+        return EXIT_FAILURE;
+    }
 
-    int center_idx =
-        (GRID_SIZE / 2) * GRID_SIZE + GRID_SIZE / 2;
+    size_t center_idx =
+        (size_t)(GRID_SIZE / 2) * GRID_SIZE + GRID_SIZE / 2;
 
     printf("Implementation: Serial C\n");
     printf("Grid: %d x %d\n", GRID_SIZE, GRID_SIZE);
@@ -171,6 +163,8 @@ int main(void) {
         fprintf(runtime_file, "serial,%d,%d,%.9f\n",
                 GRID_SIZE, TIME_STEPS, elapsed);
         fclose(runtime_file);
+    } else {
+        perror("results/cpu/runtime_serial.csv");
     }
 
     free(current);
